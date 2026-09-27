@@ -71,7 +71,7 @@ def retrieve(query, model, embeddings, chunks, top_k=TOP_K):
 
     return results
 
-def built_context(results):
+def build_context(results):
     parts = []
 
     for i, result in enumerate(results, start=1):
@@ -110,6 +110,12 @@ def generate_answer(query, context):
 
     return response.text
 
+def has_relevant_context(results, threshold=0.30):
+    if not results:
+        return False
+
+    return results[0]["score"] >= threshold
+
 
 pages = load_pdf("data/ust_manual.pdf")
 chunks = create_chunks(pages)
@@ -144,8 +150,19 @@ for rank, result in enumerate(results, start=1):
     print(result["text"])
 
 
-context = built_context(results)
-answer = generate_answer(query, context)
+if not has_relevant_context(results):
+    print("\n=== Answer ===")
+    print(
+        "The answer cannot be determined "
+        "from the provided documents."
+    )
+else:
+    context = build_context(results)
 
-print(f"\n\n=== Answer ===")
-print(answer)
+    answer = generate_answer(
+        query,
+        context,
+    )
+
+    print("\n=== Answer ===")
+    print(answer)
