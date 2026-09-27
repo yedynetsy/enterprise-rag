@@ -1,12 +1,15 @@
-import numpy as np
 import os
-import pymupdf
 
 from dotenv import load_dotenv
 from google import genai
-from sentence_transformers import SentenceTransformer
 
+from retrieval import build_index, retrieve
+
+
+PDF_PATH = "data/ust_manual.pdf"
+RELEVANCE_THRESHOLD = 0.30
 TOP_K = 3
+
 
 load_dotenv()
 
@@ -14,62 +17,6 @@ client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY")
 )
 
-def load_pdf(path: str):
-    pages = []
-
-    with pymupdf.open(path) as document:
-        for page_number, page in enumerate(document, start=1):
-            text = page.get_text("text", sort=True)
-
-            if text.strip():
-                pages.append({
-                    "page": page_number,
-                    "text": text,
-                })
-
-    return pages
-
-def create_chunks(pages, chunk_size=120, overlap=30):
-    chunks = []
-
-    step = chunk_size - overlap
-
-    for page in pages:
-        words = page["text"].split()
-
-        for start in range(0, len(words), step):
-            chunk_words = words[start:start + chunk_size]
-
-            if len(chunk_words) < 20:
-                continue
-
-            chunks.append({
-                "page": page["page"],
-                "text": " ".join(chunk_words),
-            })
-
-    return chunks
-
-def retrieve(query, model, embeddings, chunks, top_k=TOP_K):
-    query_embedding = model.encode_query(
-        query,
-        normalize_embeddings=True,
-    )
-
-    scores = embeddings @ query_embedding
-
-    top_indices = np.argsort(scores)[::-1][:top_k]
-
-    results = []
-
-    for index in top_indices:
-        results.append({
-            "text": chunks[index]["text"],
-            "page": chunks[index]["page"],
-            "score": float(scores[index]),
-        })
-
-    return results
 
 def build_context(results):
     parts = []
@@ -81,6 +28,7 @@ def build_context(results):
         )
 
     return "\n\n".join(parts)
+
 
 def generate_answer(query, context):
     prompt = f"""
@@ -110,59 +58,65 @@ def generate_answer(query, context):
 
     return response.text
 
-def has_relevant_context(results, threshold=0.30):
+
+def has_relevant_context(
+    results,
+    threshold=RELEVANCE_THRESHOLD,
+):
     if not results:
         return False
 
     return results[0]["score"] >= threshold
 
 
-pages = load_pdf("data/ust_manual.pdf")
-chunks = create_chunks(pages)
+def main():
+    print("Building index...")
 
-print(f"Pages: {len(pages)}")
-print(f"Chunks: {len(chunks)}")
-
-
-model = SentenceTransformer(
-    "sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
-)
-
-texts = [chunk["text"] for chunk in chunks]
-embeddings = model.encode_document(
-    texts,
-    normalize_embeddings=True,
-)
-
-print(f"Embeddings shape: {embeddings.shape}")
-
-
-query = input("\nAsk a question: ")
-
-results = retrieve(query, model, embeddings, chunks)
-
-print("\nRetrieved chunks:")
-
-for rank, result in enumerate(results, start=1):
-    print(f"\n--- Result {rank} ---")
-    print(f"Score: {result['score']:.3f}")
-    print(f"Page: {result['page']}")
-    print(result["text"])
-
-
-if not has_relevant_context(results):
-    print("\n=== Answer ===")
-    print(
-        "The answer cannot be determined "
-        "from the provided documents."
+    model, chunks, embeddings = build_index(
+        PDF_PATH,
+        chunk_size=120,
+        overlap=30,
     )
-else:
+
+    print(f"Chunks: {len(chunks)}")
+    print(f"Embeddings shape: {embeddings.shape}")
+
+    query = input("\nAsk a question: ")
+
+    results = retrieve(
+        query=query,
+        model=model,
+        embeddings=embeddings,
+        chunks=chunks,
+        top_k=TOP_K,
+    )
+
+    print("\nRetrieved chunks:")
+
+    for rank, result in enumerate(results, start=1):
+        print(f"\n--- Result {rank} ---")
+        print(f"Score: {result['score']:.3f}")
+        print(f"Page: {result['page']}")
+        print(result["text"])
+
+    if not has_relevant_context(results):
+        print("\n=== Answer ===")
+        print(
+            "The answer cannot be determined "
+            "from the provided documents."
+        )
+        return
+
     context = build_context(results)
 
     answer = generate_answer(
-        query,
-        context,
+        query=query,
+        context=context,
     )
 
     print("\n=== Answer ===")
     print(answer)
+
+
+if __name__ == "__main__":
+    main()
