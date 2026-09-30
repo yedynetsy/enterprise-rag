@@ -168,7 +168,7 @@ def evaluate_configuration(
             failures.append({
                 "query": item["query"],
                 "expected": expected_pages,
-                "retrieved": retrieved_pages,
+                "results": results,
                 "rr": reciprocal_rank,
             })
 
@@ -248,8 +248,21 @@ for result in all_results:
         continue
 
     for failure in result["failures"]:
-        print()
-        print(f"Query:     {failure['query']}")
-        print(f"Expected:  {failure['expected']}")
-        print(f"Retrieved: {failure['retrieved']}")
-        print(f"RR:        {failure['rr']:.3f}")
+        print("\n" + "=" * 80)
+
+        print(f"Query:    {failure['query']}")
+        print(f"Expected: {failure['expected']}")
+        print(f"RR:       {failure['rr']:.3f}")
+
+        for rank, item in enumerate(
+            failure["results"],
+            start=1,
+        ):
+            print(
+                f"\nRank {rank} | "
+                f"Page {item['page']} | "
+                f"Score {item['score']:.3f}"
+            )
+
+            print("-" * 80)
+            print(item["text"][:500])
