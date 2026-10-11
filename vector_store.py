@@ -13,7 +13,10 @@ COLLECTION_NAME = "ust_manual"
 VECTOR_SIZE = 384
 
 
-client = QdrantClient(url=QDRANT_URL)
+client = QdrantClient(
+    url=QDRANT_URL,
+    timeout=5,
+)
 
 
 def validate_index_data(chunks, embeddings):
@@ -116,3 +119,15 @@ def search(query_embedding, top_k=3):
         })
 
     return results
+
+
+def get_index_point_count():
+    if not client.collection_exists(COLLECTION_NAME):
+        return None
+
+    result = client.count(
+        collection_name=COLLECTION_NAME,
+        exact=True,
+    )
+
+    return result.count
