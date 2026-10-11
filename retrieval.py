@@ -7,6 +7,10 @@ from sentence_transformers import SentenceTransformer
 MODEL_NAME = "sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
 
 
+def load_embedding_model():
+    return SentenceTransformer(MODEL_NAME)
+
+
 def load_pdf(path: str):
     pages = []
 
@@ -58,7 +62,7 @@ def build_index(
         overlap=overlap,
     )
 
-    model = SentenceTransformer(MODEL_NAME)
+    model = load_embedding_model()
 
     texts = [chunk["text"] for chunk in chunks]
 

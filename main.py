@@ -3,13 +3,9 @@ import os
 from dotenv import load_dotenv
 from google import genai
 
-from config import (
-    PDF_PATH,
-    CHUNK_SIZE,
-    CHUNK_OVERLAP,
-    TOP_K,
-)
-from retrieval import build_index, retrieve
+from config import TOP_K
+from retrieval import load_embedding_model
+from vector_store import search
 
 
 RELEVANCE_THRESHOLD = 0.30
@@ -74,24 +70,22 @@ def has_relevant_context(
 
 
 def main():
-    print("Building index...")
+    print("Loading embedding model...")
+    model = load_embedding_model()
 
-    model, chunks, embeddings = build_index(
-        PDF_PATH,
-        chunk_size=CHUNK_SIZE,
-        overlap=CHUNK_OVERLAP,
+    query = input("\nAsk a question: ").strip()
+
+    if not query:
+        print("Please enter a question.")
+        return
+
+    query_embedding = model.encode_query(
+        query,
+        normalize_embeddings=True,
     )
 
-    print(f"Chunks: {len(chunks)}")
-    print(f"Embeddings shape: {embeddings.shape}")
-
-    query = input("\nAsk a question: ")
-
-    results = retrieve(
-        query=query,
-        model=model,
-        embeddings=embeddings,
-        chunks=chunks,
+    results = search(
+        query_embedding,
         top_k=TOP_K,
     )
 
