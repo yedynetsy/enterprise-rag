@@ -41,3 +41,6 @@ data/
 
 # Logs
 *.log
+
+# Qdrant
+qdrant_storage/

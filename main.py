@@ -3,12 +3,16 @@ import os
 from dotenv import load_dotenv
 from google import genai
 
+from config import (
+    PDF_PATH,
+    CHUNK_SIZE,
+    CHUNK_OVERLAP,
+    TOP_K,
+)
 from retrieval import build_index, retrieve
 
 
-PDF_PATH = "data/ust_manual.pdf"
 RELEVANCE_THRESHOLD = 0.30
-TOP_K = 3
 
 
 load_dotenv()
@@ -74,8 +78,8 @@ def main():
 
     model, chunks, embeddings = build_index(
         PDF_PATH,
-        chunk_size=120,
-        overlap=30,
+        chunk_size=CHUNK_SIZE,
+        overlap=CHUNK_OVERLAP,
     )
 
     print(f"Chunks: {len(chunks)}")
