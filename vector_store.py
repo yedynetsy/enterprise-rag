@@ -112,6 +112,7 @@ def search(query_embedding, top_k=3):
             "score": point.score,
             "page": point.payload["page"],
             "text": point.payload["text"],
+            "document": point.payload["document"],
         })
 
     return results

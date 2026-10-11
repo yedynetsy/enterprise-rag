@@ -1,4 +1,11 @@
+from config import PDF_PATH, CHUNK_SIZE, CHUNK_OVERLAP, TOP_K
 from retrieval import build_index, retrieve
+from vector_store import (
+    create_collection,
+    upload_chunks,
+    validate_index_data,
+    search,
+)
 
 
 QUERIES = [
@@ -105,164 +112,118 @@ QUERIES = [
 ]
 
 
-def evaluate_configuration(
-    pdf_path,
-    chunk_size,
-    overlap,
-    top_k=3,
-):
-    model, chunks, embeddings = build_index(
-        pdf_path,
-        chunk_size=chunk_size,
-        overlap=overlap,
-    )
-
+def calculate_metrics(results_by_query, top_k):
     hit_at_1 = 0
     hit_at_k = 0
-    reciprocal_ranks = []
+    reciprocal_rank_sum = 0.0
 
-    failures = []
-
-    for item in QUERIES:
-        results = retrieve(
-            item["query"],
-            model,
-            embeddings,
-            chunks,
-            top_k=top_k,
-        )
-
+    for item, results in zip(QUERIES, results_by_query):
         expected_pages = item["expected_pages"]
+        pages = [result["page"] for result in results[:top_k]]
 
-        retrieved_pages = [
-            result["page"]
-            for result in results
-        ]
+        first_relevant_rank = None
 
-        if retrieved_pages[0] in expected_pages:
-            hit_at_1 += 1
-
-        found_in_top_k = any(
-            page in expected_pages
-            for page in retrieved_pages
-        )
-
-        if found_in_top_k:
-            hit_at_k += 1
-
-        reciprocal_rank = 0.0
-
-        for rank, page in enumerate(
-            retrieved_pages,
-            start=1,
-        ):
+        for rank, page in enumerate(pages, start=1):
             if page in expected_pages:
-                reciprocal_rank = 1 / rank
+                first_relevant_rank = rank
                 break
 
-        reciprocal_ranks.append(
-            reciprocal_rank
-        )
+        if first_relevant_rank == 1:
+            hit_at_1 += 1
 
-        if reciprocal_rank < 1:
-            failures.append({
-                "query": item["query"],
-                "expected": expected_pages,
-                "results": results,
-                "rr": reciprocal_rank,
-            })
+        if first_relevant_rank is not None:
+            hit_at_k += 1
+            reciprocal_rank_sum += 1 / first_relevant_rank
 
     total = len(QUERIES)
 
     return {
-        "chunk_size": chunk_size,
-        "overlap": overlap,
         "hit@1": hit_at_1 / total,
-        f"hit@{top_k}": hit_at_k / total,
-        "mrr": sum(reciprocal_ranks) / total,
-        "failures": failures,
+        "hit@k": hit_at_k / total,
+        "mrr@k": reciprocal_rank_sum / total,
     }
 
 
-CONFIGS = [
-    {
-        "chunk_size": 90,
-        "overlap": 20,
-    },
-    {
-        "chunk_size": 120,
-        "overlap": 30,
-    },
-    {
-        "chunk_size": 150,
-        "overlap": 40,
-    },
-    {
-        "chunk_size": 180,
-        "overlap": 45,
-    },
-]
+def main():
+    model, chunks, embeddings = build_index(
+        PDF_PATH,
+        chunk_size=CHUNK_SIZE,
+        overlap=CHUNK_OVERLAP,
+    )
 
+    validate_index_data(chunks, embeddings)
+    create_collection(recreate=True)
+    upload_chunks(chunks, embeddings)
 
-all_results = []
+    numpy_results = []
+    qdrant_results = []
+    matching_queries = 0
 
-for config in CONFIGS:
+    for item in QUERIES:
+        query = item["query"]
+
+        baseline = retrieve(
+            query=query,
+            model=model,
+            embeddings=embeddings,
+            chunks=chunks,
+            top_k=TOP_K,
+        )
+
+        query_embedding = model.encode_query(
+            query,
+            normalize_embeddings=True,
+        )
+
+        database = search(
+            query_embedding,
+            top_k=TOP_K,
+        )
+
+        numpy_results.append(baseline)
+        qdrant_results.append(database)
+
+        baseline_chunks = [
+            (result["page"], result["text"])
+            for result in baseline
+        ]
+        database_chunks = [
+            (result["page"], result["text"])
+            for result in database
+        ]
+
+        same_results = baseline_chunks == database_chunks
+        matching_queries += int(same_results)
+
+        print(f"\nQuery: {query}")
+        print(f"Expected pages: {item['expected_pages']}")
+        print(f"NumPy pages:  {[r['page'] for r in baseline]}")
+        print(f"Qdrant pages: {[r['page'] for r in database]}")
+        print(f"Same chunks and order: {same_results}")
+
     print(
-        f"\nEvaluating "
-        f"chunk_size={config['chunk_size']}, "
-        f"overlap={config['overlap']}..."
+        f"\n=== METRICS: chunk={CHUNK_SIZE}, "
+        f"overlap={CHUNK_OVERLAP}, top_k={TOP_K} ==="
     )
 
-    result = evaluate_configuration(
-        pdf_path="data/ust_manual.pdf",
-        chunk_size=config["chunk_size"],
-        overlap=config["overlap"],
-        top_k=3,
-    )
+    for name, results in (
+        ("NumPy", numpy_results),
+        ("Qdrant", qdrant_results),
+    ):
+        metrics = calculate_metrics(results, TOP_K)
 
-    all_results.append(result)
+        print(
+            f"{name:6} | "
+            f"Hit@1={metrics['hit@1']:.3f} | "
+            f"Hit@{TOP_K}={metrics['hit@k']:.3f} | "
+            f"MRR@{TOP_K}={metrics['mrr@k']:.3f}"
+        )
 
-
-print("\n=== FINAL RESULTS ===\n")
-
-for result in all_results:
     print(
-        f"chunk={result['chunk_size']:3} | "
-        f"overlap={result['overlap']:2} | "
-        f"Hit@1={result['hit@1']:.3f} | "
-        f"Hit@3={result['hit@3']:.3f} | "
-        f"MRR={result['mrr']:.3f}"
+        f"\nIdentical rankings: "
+        f"{matching_queries}/{len(QUERIES)}"
     )
 
 
-print("\n=== FAILURES ===")
-
-for result in all_results:
-    print(
-        f"\n--- chunk={result['chunk_size']} "
-        f"overlap={result['overlap']} ---"
-    )
-
-    if not result["failures"]:
-        print("No failures.")
-        continue
-
-    for failure in result["failures"]:
-        print("\n" + "=" * 80)
-
-        print(f"Query:    {failure['query']}")
-        print(f"Expected: {failure['expected']}")
-        print(f"RR:       {failure['rr']:.3f}")
-
-        for rank, item in enumerate(
-            failure["results"],
-            start=1,
-        ):
-            print(
-                f"\nRank {rank} | "
-                f"Page {item['page']} | "
-                f"Score {item['score']:.3f}"
-            )
-
-            print("-" * 80)
-            print(item["text"][:500])
+if __name__ == "__main__":
+    main()

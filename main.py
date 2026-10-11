@@ -69,18 +69,16 @@ def has_relevant_context(
     return results[0]["score"] >= threshold
 
 
-def main():
-    print("Loading embedding model...")
+def answer_question(question):
+    question = question.strip()
+
+    if not question:
+        raise ValueError("Please enter a question.")
+
     model = load_embedding_model()
 
-    query = input("\nAsk a question: ").strip()
-
-    if not query:
-        print("Please enter a question.")
-        return
-
     query_embedding = model.encode_query(
-        query,
+        question,
         normalize_embeddings=True,
     )
 
@@ -89,31 +87,68 @@ def main():
         top_k=TOP_K,
     )
 
-    print("\nRetrieved chunks:")
-
-    for rank, result in enumerate(results, start=1):
-        print(f"\n--- Result {rank} ---")
-        print(f"Score: {result['score']:.3f}")
-        print(f"Page: {result['page']}")
-        print(result["text"])
-
     if not has_relevant_context(results):
-        print("\n=== Answer ===")
-        print(
-            "The answer cannot be determined "
-            "from the provided documents."
-        )
-        return
+        return {
+            "answer": (
+                "The answer cannot be determined "
+                "from the provided documents."
+            ),
+            "sources": [],
+            "status": "insufficient_context",
+        }
 
     context = build_context(results)
 
     answer = generate_answer(
-        query=query,
+        query=question,
         context=context,
     )
 
+    sources = []
+
+    for number, result in enumerate(results, start=1):
+        sources.append({
+            "source_id": number,
+            "document": result["document"],
+            "page": result["page"],
+            "text": result["text"],
+            "score": result["score"],
+        })
+
+    return {
+        "answer": answer,
+        "sources": sources,
+        "status": "answered",
+    }
+
+
+def main():
+    print("Loading embedding model...")
+    load_embedding_model()
+
+    question = input("\nAsk a question: ").strip()
+
+    if not question:
+        print("Please enter a question.")
+        return
+
+    result = answer_question(question)
+
+    print(f"\nStatus: {result['status']}")
+
     print("\n=== Answer ===")
-    print(answer)
+    print(result["answer"])
+
+    print("\n=== Sources ===")
+
+    for source in result["sources"]:
+        print(
+            f"\n[Source {source['source_id']}, "
+            f"page {source['page']}]"
+        )
+        print(f"Document: {source['document']}")
+        print(f"Score: {source['score']:.3f}")
+        print(source["text"])
 
 
 if __name__ == "__main__":
