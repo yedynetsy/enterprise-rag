@@ -1,12 +1,14 @@
 import numpy as np
 import pymupdf
 
+from functools import lru_cache
 from sentence_transformers import SentenceTransformer
 
 
 MODEL_NAME = "sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
 
 
+@lru_cache(maxsize=1)
 def load_embedding_model():
     return SentenceTransformer(MODEL_NAME)
 
