@@ -1,3 +1,4 @@
+import os
 import numpy as np
 
 from qdrant_client import QdrantClient
@@ -8,7 +9,10 @@ from qdrant_client.models import (
 )
 
 
-QDRANT_URL = "http://localhost:6333"
+QDRANT_URL = os.getenv(
+    "QDRANT_URL",
+    "http://localhost:6333",
+)
 COLLECTION_NAME = "ust_manual"
 VECTOR_SIZE = 384
 

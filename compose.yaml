@@ -1,0 +1,57 @@
+services:
+  qdrant:
+    image: qdrant/qdrant@sha256:12364fe851b9f17356fc88189fc06d1b521262e04659ec7345975b00c9246a10
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  api:
+    build: .
+    image: enterprise-rag:local
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY in .env}
+      QDRANT_URL: http://qdrant:6333
+      HF_HOME: /app/model_cache
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - model_cache:/app/model_cache
+    depends_on:
+      qdrant:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=10)"
+      interval: 10s
+      timeout: 15s
+      retries: 30
+      start_period: 5m
+    restart: unless-stopped
+
+  ui:
+    build: .
+    image: enterprise-rag:local
+    command:
+      - python
+      - -m
+      - streamlit
+      - run
+      - ui.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+    environment:
+      RAG_API_URL: http://api:8000
+    ports:
+      - "127.0.0.1:8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  model_cache:
